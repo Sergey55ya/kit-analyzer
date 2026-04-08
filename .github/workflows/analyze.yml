@@ -35,13 +35,13 @@ jobs:
       - name: Отправка результатов на email
         uses: dawidd6/action-send-mail@v3
         with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: ${{ secrets.SMTP_PORT }}
-          username: ${{ secrets.EMAIL_FROM }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
+          server_address: smtp.yandex.ru
+          server_port: 465
+          username: ysa@silam.ru
+          password: ${{ secrets.MAIL_PASSWORD }}
           subject: "Тележки с инструментом"
-          to: ${{ secrets.EMAIL_TO }}
-          from: GitHub Actions <${{ secrets.EMAIL_FROM }}>
+          to: ysa@silam.ru
+          from: ysa@silam.ru
           body: |
             Здравствуйте!
             
@@ -49,9 +49,8 @@ jobs:
             
             📅 Дата и время: ${{ github.event.head_commit.timestamp }}
             
-            Файл с результатами прикреплен к этому письму.
+            📊 Результаты анализа во вложении.
             
             ---
             Автоматическое сообщение от GitHub Actions
           attachments: results_*.csv
-          convert_markdown: true
