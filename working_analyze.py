@@ -1,33 +1,17 @@
 # -*- coding: utf-8 -*-
 import pandas as pd
-import numpy as np
-from collections import defaultdict
-import os
 import requests
-import sys
-import logging
 from datetime import datetime
-import json
+import os
+import sys
 import re
 
-# ============================================
-# 1. НАСТРОЙКИ ЛОГИРОВАНИЯ
-# ============================================
-
-log_filename = f'analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_filename, encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-logger = logging.getLogger(__name__)
+print("="*70)
+print("🚀 ЗАПУСК АНАЛИЗА (УПРОЩЕННАЯ ВЕРСИЯ)")
+print("="*70)
 
 # ============================================
-# 2. НАСТРОЙКИ
+# НАСТРОЙКИ
 # ============================================
 
 COMPONENTS_FILENAME = "components.xlsx"
@@ -35,369 +19,229 @@ KITS_URL = "https://docs.google.com/spreadsheets/d/1Cqr7WKBAaJqBjDBSU6flvouMtUKK
 KITS_FILENAME = "kits.xlsx"
 
 # ============================================
-# 3. ФУНКЦИИ
+# ФУНКЦИИ
 # ============================================
 
 def normalize_article(article):
     if pd.isna(article):
         return ""
-    if not isinstance(article, str):
-        article = str(article)
-    result = article.replace(' ', '').replace('-', '')
-    result = re.sub(r'[^A-Za-z0-9]', '', result)
-    return result.upper()
-
-def find_stock_items(article, df_stock):
-    if df_stock.empty:
-        return pd.DataFrame()
-    
-    original_article = str(article).strip()
-    variants = [original_article]
-    
-    no_spaces = original_article.replace(' ', '').replace('-', '')
-    if no_spaces != original_article:
-        variants.append(no_spaces)
-    
-    normalized = normalize_article(original_article)
-    if normalized != original_article and normalized != no_spaces:
-        variants.append(normalized)
-    
-    variants = list(dict.fromkeys(variants))
-    
-    for variant in variants:
-        result = df_stock[df_stock['Код'].astype(str) == variant]
-        if not result.empty:
-            return result
-        
-        result = df_stock[df_stock['Код'].astype(str).str.upper() == variant.upper()]
-        if not result.empty:
-            return result
-    
-    df_stock['Код_норм'] = df_stock['Код'].astype(str).apply(normalize_article)
-    normalized_article = normalize_article(original_article)
-    result = df_stock[df_stock['Код_норм'] == normalized_article]
-    if not result.empty:
-        return result
-    
-    return pd.DataFrame()
+    article = str(article).strip()
+    article = article.replace('-', '').replace(' ', '')
+    article = re.sub(r'[^A-Za-z0-9]', '', article)
+    return article.upper()
 
 def download_file(url, filename):
-    logger.info(f"📥 Скачиваю {filename}...")
+    print(f"📥 Скачиваю {filename}...")
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, timeout=30)
         if response.status_code == 200:
             with open(filename, 'wb') as f:
                 f.write(response.content)
-            logger.info(f"   ✅ Скачан: {filename}")
+            print(f"   ✅ Скачан: {filename} ({len(response.content)} байт)")
             return True
+        else:
+            print(f"   ❌ HTTP {response.status_code}")
+            return False
     except Exception as e:
-        logger.error(f"   ❌ Ошибка: {e}")
-    return False
+        print(f"   ❌ Ошибка: {e}")
+        return False
 
 def load_components(filename):
-    logger.info(f"📄 Загрузка компонентов из {filename}...")
+    print(f"\n📄 Загрузка компонентов из {filename}...")
     try:
         df = pd.read_excel(filename, sheet_name=0)
+        print(f"   Колонки: {df.columns.tolist()}")
         
-        column_mapping = {
-            'Код': 'Код', 'Бренд': 'Бренд', 'Название': 'Наименование',
-            'ID поставщика': 'ID_поставщика', 'Цена': 'Цена',
-            'Наличие': 'Наличие', 'Минимальный срок доставки': 'Срок'
-        }
+        # Нормализуем артикулы
+        if 'Код' in df.columns:
+            df['Код'] = df['Код'].astype(str).str.strip()
+            df['Код_норм'] = df['Код'].apply(normalize_article)
+        else:
+            print("   ❌ Нет колонки 'Код'")
+            return pd.DataFrame()
         
-        existing_cols = {k: v for k, v in column_mapping.items() if k in df.columns}
-        df = df.rename(columns=existing_cols)
+        # Конвертируем наличие
+        if 'Наличие' in df.columns:
+            df['Наличие'] = pd.to_numeric(df['Наличие'], errors='coerce').fillna(0)
+        else:
+            df['Наличие'] = 0
+            
+        if 'Цена' in df.columns:
+            df['Цена'] = pd.to_numeric(df['Цена'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+        else:
+            df['Цена'] = 0
+            
+        print(f"   ✅ Загружено {len(df)} компонентов")
+        print(f"   📊 Уникальных артикулов: {df['Код'].nunique()}")
         
-        df['Код'] = df['Код'].astype(str).str.strip()
-        df['Цена'] = pd.to_numeric(df['Цена'].astype(str).str.replace(',', '.'), errors='coerce')
-        df['Наличие'] = pd.to_numeric(df['Наличие'], errors='coerce').fillna(0)
-        df['Срок'] = pd.to_numeric(df['Срок'], errors='coerce').fillna(999)
-        df = df[df['Цена'] > 0]
-        
-        logger.info(f"   ✅ Загружено {len(df)} компонентов")
         return df
     except Exception as e:
-        logger.error(f"   ❌ Ошибка: {e}")
+        print(f"   ❌ Ошибка: {e}")
         return pd.DataFrame()
 
-def clean_kit_name(full_name):
-    if not isinstance(full_name, str):
-        return full_name
-    name = full_name.strip()
-    if ' /' in name:
-        return name.rsplit(' /', 1)[0].strip()
-    if name.endswith('/'):
-        return name[:-1].strip()
-    return name
-
-def parse_all_kits_from_file(filename):
-    logger.info(f"📋 Загрузка комплектов из {filename}...")
-    
+def parse_kits(filename):
+    print(f"\n📋 Загрузка комплектов из {filename}...")
     try:
         df = pd.read_excel(filename, sheet_name=0, header=None)
-        logger.info(f"   Всего строк в файле: {len(df)}")
-
+        print(f"   Всего строк: {len(df)}")
+        
         kits = {}
         current_kit = None
-        kit_components = []
-        kit_name = ""
-        kit_article = ""
-
-        i = 0
-        while i < len(df):
+        current_name = ""
+        current_comps = []
+        reading = False
+        
+        for i in range(len(df)):
             row = df.iloc[i].astype(str).tolist()
+            while len(row) < 7:
+                row.append("")
             
-            if len(row) > 1 and row[1] == 'Комплект':
+            # Ищем комплект
+            if len(row) > 1 and row[1] == "Комплект":
+                if current_kit and current_comps:
+                    kits[current_kit] = {
+                        'name': current_name,
+                        'components': list(set(current_comps))
+                    }
+                    print(f"   ✅ {current_kit}: {len(set(current_comps))} комп.")
+                
                 if i + 1 < len(df):
                     next_row = df.iloc[i+1].astype(str).tolist()
                     if len(next_row) > 2:
-                        potential_name = str(next_row[1]).strip()
-                        potential_article = str(next_row[2]).strip()
-                        
-                        if (potential_name and potential_name != 'nan' and
-                            potential_article and potential_article != 'nan' and
-                            len(potential_article) > 3):
-                            
-                            if current_kit and len(kit_components) > 0:
-                                unique_components = []
-                                seen = set()
-                                for comp in kit_components:
-                                    if comp not in seen and comp not in ['nan', 'Артикул']:
-                                        seen.add(comp)
-                                        unique_components.append(comp)
-                                
-                                if len(unique_components) > 0:
-                                    clean_name = clean_kit_name(kit_name)
-                                    kits[kit_article] = {
-                                        'name': clean_name,
-                                        'components': unique_components
-                                    }
-                                    logger.info(f"      ✅ Загружен комплект {kit_article}: {len(unique_components)} компонентов")
-                            
-                            kit_name = potential_name
-                            kit_article = potential_article
-                            kit_components = []
-                            current_kit = kit_article
-                            i += 2
-                            continue
+                        current_name = next_row[1] if next_row[1] != "nan" else ""
+                        current_kit = next_row[2] if next_row[2] != "nan" else ""
+                        current_comps = []
+                        reading = False
+                continue
             
-            if current_kit and len(row) > 2:
-                article = str(row[2]).strip()
-                if (article and article != 'nan' and article != 'Артикул' and
-                    not article.startswith('УТ') and len(article) > 1 and len(article) < 30):
-                    exclude_words = ['гофроящик', 'этикетка', 'ложемент', 'наименование',
-                                   'комплект', 'бренд', 'код', 'упаковка', 'коробка']
-                    article_lower = article.lower()
-                    if not any(word in article_lower for word in exclude_words):
-                        kit_components.append(article)
+            # Начало списка компонентов
+            if len(row) > 1 and row[1] == "Наименование":
+                reading = True
+                continue
             
-            i += 1
-
-        if current_kit and len(kit_components) > 0:
-            unique_components = []
-            seen = set()
-            for comp in kit_components:
-                if comp not in seen and comp not in ['nan', 'Артикул']:
-                    seen.add(comp)
-                    unique_components.append(comp)
-            
-            if len(unique_components) > 0:
-                clean_name = clean_kit_name(kit_name)
-                kits[kit_article] = {
-                    'name': clean_name,
-                    'components': unique_components
-                }
-                logger.info(f"      ✅ Загружен комплект {kit_article}: {len(unique_components)} компонентов")
-
-        logger.info(f"\n   ✅ Всего загружено комплектов: {len(kits)}")
+            # Собираем компоненты
+            if reading and current_kit:
+                art = row[2] if len(row) > 2 else ""
+                if art and art != "nan" and len(art) > 2:
+                    exclude = ['гофроящик', 'этикетка', 'ложемент', 'упаковка', 'коробка']
+                    if not any(w in art.lower() for w in exclude):
+                        current_comps.append(art)
+        
+        # Последний комплект
+        if current_kit and current_comps:
+            kits[current_kit] = {
+                'name': current_name,
+                'components': list(set(current_comps))
+            }
+            print(f"   ✅ {current_kit}: {len(set(current_comps))} комп.")
+        
+        print(f"\n   ✅ ВСЕГО КОМПЛЕКТОВ: {len(kits)}")
         return kits
     except Exception as e:
-        logger.error(f"   ❌ Ошибка: {e}")
+        print(f"   ❌ Ошибка: {e}")
         return {}
 
-def calculate_max_quantity_with_groups(components, df_stock, kit_article):
-    if df_stock.empty:
-        return 0, [], None, None
-
-    available_items = {}
-    missing_articles = []
-
-    for article in components:
-        items = find_stock_items(article, df_stock)
-
-        if items.empty:
-            missing_articles.append(article)
-            continue
-
-        available = items[pd.notna(items['Цена']) & (items['Цена'] > 0)].copy()
-        
-        if available.empty:
-            missing_articles.append(article)
-            continue
-
-        available = available.sort_values(['Срок', 'Цена'])
-        
-        available_items[article] = []
-        for _, row in available.iterrows():
-            available_items[article].append({
-                'source': str(row.get('ID_поставщика', '?')),
-                'price': float(row['Цена']),
-                'delivery': int(row['Срок']) if not pd.isna(row['Срок']) else 999,
-                'qty': int(row['Наличие']) if not pd.isna(row['Наличие']) else 0
-            })
-
-    if missing_articles:
-        return 0, [], missing_articles[0] if missing_articles else None, 0
-
-    stock_copies = {}
-    for article, items in available_items.items():
-        stock_copies[article] = [item.copy() for item in items]
-    
-    min_total_qty = min(sum(item['qty'] for item in items) for items in available_items.values())
-    
-    kits_assembled = []
-    
-    for kit_num in range(min_total_qty):
-        kit_price = 0
-        kit_delivery = 0
-        kit_complete = True
-        
-        for article in components:
-            if article not in stock_copies:
-                kit_complete = False
-                break
-            
-            best_idx = -1
-            best_price = float('inf')
-            best_delivery = float('inf')
-            
-            for i, source in enumerate(stock_copies[article]):
-                if source['qty'] > 0:
-                    if (source['delivery'] < best_delivery or 
-                        (source['delivery'] == best_delivery and source['price'] < best_price)):
-                        best_delivery = source['delivery']
-                        best_price = source['price']
-                        best_idx = i
-            
-            if best_idx >= 0:
-                source = stock_copies[article][best_idx]
-                kit_price += source['price']
-                if source['delivery'] > kit_delivery:
-                    kit_delivery = source['delivery']
-                source['qty'] -= 1
-            else:
-                kit_complete = False
-                break
-        
-        if kit_complete:
-            kits_assembled.append({
-                'price': round(kit_price, 2),
-                'delivery': kit_delivery
-            })
-    
-    grouped = defaultdict(int)
-    for kit in kits_assembled:
-        key = (kit['price'], kit['delivery'])
-        grouped[key] += 1
-    
-    result_groups = []
-    for (price, delivery), count in sorted(grouped.items()):
-        result_groups.append({
-            'count': count,
-            'price': price,
-            'delivery': delivery
-        })
-    
-    return len(kits_assembled), result_groups, None, 0
-
 # ============================================
-# 4. ОСНОВНАЯ ФУНКЦИЯ
+# ОСНОВНАЯ ЛОГИКА
 # ============================================
 
 def main():
-    logger.info("="*70)
-    logger.info("🚀 ЗАПУСК АНАЛИЗА СКЛАДСКИХ ОСТАТКОВ")
-    logger.info(f"📅 Дата запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info("="*70)
-    
-    # Загрузка компонентов
+    # 1. Проверяем компоненты
     if not os.path.exists(COMPONENTS_FILENAME):
-        logger.error(f"❌ Файл {COMPONENTS_FILENAME} не найден!")
+        print(f"\n❌ Файл {COMPONENTS_FILENAME} не найден в репозитории!")
+        print("📌 Загрузите файл components.xlsx в репозиторий")
+        
+        # Создаем пустой результат
+        df_result = pd.DataFrame({
+            'Комплект': ['ОШИБКА'],
+            'Артикул': ['Файл компонентов не найден'],
+            'Бренд': [''],
+            'Количество': [''],
+            'Цена': [''],
+            'Срок': ['']
+        })
+        output_file = f'results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        df_result.to_csv(output_file, index=False, encoding='utf-8-sig')
+        print(f"\n💾 Создан файл с ошибкой: {output_file}")
         return
     
+    # 2. Загружаем компоненты
     df_stock = load_components(COMPONENTS_FILENAME)
     if df_stock.empty:
-        logger.error("❌ Не удалось загрузить компоненты")
+        print("❌ Не удалось загрузить компоненты")
         return
     
-    # Загрузка комплектов
+    # 3. Скачиваем комплекты
     if not download_file(KITS_URL, KITS_FILENAME):
-        logger.error("❌ Не удалось скачать файл с комплектами")
+        print("❌ Не удалось скачать комплекты")
         return
     
-    kits = parse_all_kits_from_file(KITS_FILENAME)
+    # 4. Парсим комплекты
+    kits = parse_kits(KITS_FILENAME)
     if not kits:
-        logger.error("❌ Нет загруженных комплектов!")
+        print("❌ Комплекты не найдены")
         return
     
-    # Анализ
-    logger.info("\n🔍 АНАЛИЗ КОМПЛЕКТОВ")
-    logger.info("="*70)
+    # 5. Анализируем
+    print("\n🔍 АНАЛИЗ КОМПЛЕКТОВ")
+    print("="*70)
     
-    all_results = []
+    results = []
     
-    for kit_article, kit_info in kits.items():
-        logger.info(f"\n▶️ Анализ {kit_article}")
+    for art, info in kits.items():
+        print(f"\n📦 {art}: {info['name'][:40]}")
         
-        max_qty, groups, limiting_art, limiting_qty = calculate_max_quantity_with_groups(
-            kit_info['components'], df_stock, kit_article
-        )
+        # Ищем минимальное количество
+        min_qty = float('inf')
+        for comp in info['components']:
+            comp_norm = normalize_article(comp)
+            found = df_stock[df_stock['Код_норм'] == comp_norm]
+            if found.empty:
+                min_qty = 0
+                break
+            total = found['Наличие'].sum()
+            if total < min_qty:
+                min_qty = total
         
-        all_results.append({'Комплект': kit_info['name'], 'Артикул': kit_article, 'Бренд': 'PowerMechanics', 'Количество': '', 'Цена': '', 'Срок': ''})
-        all_results.append({'Комплект': '', 'Артикул': '', 'Бренд': '', 'Количество': '', 'Цена': '', 'Срок': ''})
-        all_results.append({'Комплект': kit_info['name'], 'Артикул': kit_article, 'Бренд': 'PowerMechanics', 'Количество': 0, 'Цена': '—', 'Срок': '—'})
-        all_results.append({'Комплект': kit_info['name'], 'Артикул': kit_article, 'Бренд': 'PowerMechanics', 'Количество': 0, 'Цена': '—', 'Срок': '—'})
+        if min_qty == float('inf'):
+            min_qty = 0
         
-        if max_qty > 0 and groups:
-            for group in groups:
-                all_results.append({'Комплект': kit_info['name'], 'Артикул': kit_article, 'Бренд': 'PowerMechanics', 'Количество': group['count'], 'Цена': f"{group['price']:.2f} ₽", 'Срок': str(group['delivery'])})
-            
-            all_results.append({'Комплект': 'Всего комплектов по наличию:', 'Артикул': '', 'Бренд': '', 'Количество': max_qty, 'Цена': '', 'Срок': ''})
-        else:
-            all_results.append({'Комплект': kit_info['name'], 'Артикул': kit_article, 'Бренд': 'PowerMechanics', 'Количество': 0, 'Цена': '—', 'Срок': '—'})
+        print(f"   Можно собрать: {min_qty} шт.")
         
-        all_results.append({'Комплект': '', 'Артикул': '', 'Бренд': '', 'Количество': '', 'Цена': '', 'Срок': ''})
+        # Формируем вывод
+        results.append({'Комплект': info['name'], 'Артикул': art, 'Бренд': 'PowerMechanics', 'Количество': '', 'Цена': '', 'Срок': ''})
+        results.append({'Комплект': '', 'Артикул': '', 'Бренд': '', 'Количество': '', 'Цена': '', 'Срок': ''})
+        results.append({'Комплект': info['name'], 'Артикул': art, 'Бренд': 'PowerMechanics', 'Количество': 0, 'Цена': '—', 'Срок': '—'})
+        results.append({'Комплект': info['name'], 'Артикул': art, 'Бренд': 'PowerMechanics', 'Количество': 0, 'Цена': '—', 'Срок': '—'})
+        results.append({'Комплект': info['name'], 'Артикул': art, 'Бренд': 'PowerMechanics', 'Количество': int(min_qty) if min_qty > 0 else 0, 'Цена': '—', 'Срок': '—'})
+        results.append({'Комплект': '', 'Артикул': '', 'Бренд': '', 'Количество': '', 'Цена': '', 'Срок': ''})
+        results.append({'Комплект': '', 'Артикул': '', 'Бренд': '', 'Количество': '', 'Цена': '', 'Срок': ''})
     
-    # СОХРАНЕНИЕ РЕЗУЛЬТАТОВ
-    output_filename = f'results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-    df_results = pd.DataFrame(all_results)
+    # СОХРАНЯЕМ РЕЗУЛЬТАТ
+    output_file = f'results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    df_results = pd.DataFrame(results)
+    df_results.to_csv(output_file, index=False, encoding='utf-8-sig')
     
-    logger.info(f"\n📝 Сохраняю результаты в файл: {output_filename}")
-    logger.info(f"   Количество строк: {len(df_results)}")
+    print("\n" + "="*70)
+    print(f"✅ ГОТОВО!")
+    print(f"📊 Файл: {output_file}")
+    print(f"📈 Строк: {len(df_results)}")
     
-    df_results.to_csv(output_filename, index=False, encoding='utf-8-sig')
-    
-    # ПРОВЕРКА
-    if os.path.exists(output_filename):
-        file_size = os.path.getsize(output_filename)
-        logger.info(f"   ✅ Файл успешно создан! Размер: {file_size} байт")
-        
-        # Показываем первые строки
-        logger.info(f"\n📋 ПЕРВЫЕ 5 СТРОК РЕЗУЛЬТАТА:")
-        for i in range(min(5, len(df_results))):
-            row = df_results.iloc[i]
-            logger.info(f"   {str(row['Комплект'])[:40]} | {row['Артикул']} | {row['Количество']}")
+    # Проверяем, что файл создан
+    if os.path.exists(output_file):
+        print(f"✅ Файл подтвержден! Размер: {os.path.getsize(output_file)} байт")
     else:
-        logger.error(f"   ❌ ОШИБКА: Файл {output_filename} не был создан!")
-    
-    logger.info(f"\n💾 Результаты сохранены в файл: {output_filename}")
-    logger.info(f"📊 Проанализировано комплектов: {len(kits)}")
-    logger.info("✨ Анализ завершен успешно!")
+        print(f"❌ ФАЙЛ НЕ СОЗДАН!")
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
-        sys.exit(1)
+        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Создаем файл с ошибкой
+        df_err = pd.DataFrame({'Ошибка': [str(e)]})
+        df_err.to_csv(f'error_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', index=False)
+        print("Создан файл с ошибкой")
