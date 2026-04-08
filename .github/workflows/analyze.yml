@@ -17,7 +17,7 @@ jobs:
         run: |
           pip install pandas openpyxl xlrd requests
       - name: Запуск анализа
-        run: python analyze_final.py
+        run: python analyze_fixed.py
       - name: Сохранение результатов
         uses: actions/upload-artifact@v4
         with:
