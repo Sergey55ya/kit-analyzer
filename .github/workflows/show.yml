@@ -1,0 +1,17 @@
+name: Показать структуру файла
+
+on:
+  workflow_dispatch:
+
+jobs:
+  show:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Установка библиотек
+        run: pip install pandas openpyxl xlrd requests
+      - name: Запуск скрипта
+        run: python show_source.py
