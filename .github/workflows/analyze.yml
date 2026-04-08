@@ -34,21 +34,33 @@ jobs:
       
       - name: Отправка результатов на email
         run: |
-          python - <<EOF
+          echo "📧 Начинаю отправку письма..."
+          
+          # Проверяем наличие файла
+          ls -la results_*.csv
+          
+          python << 'EOF'
           import smtplib
           import glob
-          import ssl
           from email.mime.multipart import MIMEMultipart
           from email.mime.text import MIMEText
           from email.mime.base import MIMEBase
           from email import encoders
+          import os
+          
+          print("1. Настройка параметров...")
           
           # Настройки для Яндекс.Почты
           SMTP_SERVER = "smtp.yandex.ru"
           SMTP_PORT = 465
           EMAIL_FROM = "ysa@silam.ru"
           EMAIL_TO = "ysa@silam.ru"
-          EMAIL_PASSWORD = "${{ secrets.MAIL_PASSWORD }}"
+          EMAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+          
+          print(f"   SMTP_SERVER: {SMTP_SERVER}")
+          print(f"   EMAIL_FROM: {EMAIL_FROM}")
+          print(f"   EMAIL_TO: {EMAIL_TO}")
+          print(f"   Пароль установлен: {'ДА' if EMAIL_PASSWORD else 'НЕТ'}")
           
           # Создаем письмо
           msg = MIMEMultipart()
@@ -71,22 +83,38 @@ jobs:
           # Прикрепляем CSV файл
           csv_files = glob.glob('results_*.csv')
           if csv_files:
+              print(f"2. Найден CSV файл: {csv_files[0]}")
               with open(csv_files[0], 'rb') as f:
                   part = MIMEBase('application', 'octet-stream')
                   part.set_payload(f.read())
                   encoders.encode_base64(part)
                   part.add_header('Content-Disposition', f'attachment; filename="{csv_files[0]}"')
                   msg.attach(part)
-              print(f"📎 Прикреплен файл: {csv_files[0]}")
           else:
-              print("⚠️ CSV файл не найден!")
+              print("2. ОШИБКА: CSV файл не найден!")
+              # Создаем файл с ошибкой
+              with open('error.txt', 'w') as f:
+                  f.write('Файл результатов не найден')
+              with open('error.txt', 'rb') as f:
+                  part = MIMEBase('application', 'octet-stream')
+                  part.set_payload(f.read())
+                  encoders.encode_base64(part)
+                  part.add_header('Content-Disposition', 'attachment; filename="error.txt"')
+                  msg.attach(part)
           
-          # Отправляем через SSL
-          print(f"📧 Подключаюсь к {SMTP_SERVER}:{SMTP_PORT}...")
-          context = ssl.create_default_context()
-          with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, context=context) as server:
+          # Отправляем
+          print("3. Подключение к SMTP серверу...")
+          try:
+              server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
               server.login(EMAIL_FROM, EMAIL_PASSWORD)
+              print("   Аутентификация успешна!")
               server.send_message(msg)
-              print("✅ Письмо успешно отправлено!")
+              server.quit()
+              print("4. ✅ Письмо успешно отправлено!")
+          except Exception as e:
+              print(f"4. ❌ Ошибка: {e}")
+              raise
           
           EOF
+        env:
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
