@@ -1,0 +1,36 @@
+name: Автоматический анализ комплектов
+
+on:
+  schedule:
+    # Запуск каждый день в 9 утра по Москве (6:00 UTC)
+    - cron: '0 6 * * *'
+  
+  # Ручной запуск (кнопкой)
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Клонируем код
+      uses: actions/checkout@v4
+    
+    - name: Устанавливаем Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Устанавливаем библиотеки
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Запускаем анализ
+      run: python analyze_kits.py
+    
+    - name: Сохраняем результаты
+      uses: actions/upload-artifact@v4
+      with:
+        name: результаты-анализа
+        path: results_*.csv
+        retention-days: 30
