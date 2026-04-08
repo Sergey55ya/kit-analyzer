@@ -49,17 +49,19 @@ jobs:
           SMTP_SERVER = "smtp.yandex.ru"
           SMTP_PORT = 465
           EMAIL_FROM = "ysa@silam.ru"
-          EMAIL_TO = "ysa@silam.ru"
+          # Два получателя
+          EMAIL_TO = ["ysa@silam.ru", "price@silam.ru"]
           EMAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
           
           print(f"SMTP: {SMTP_SERVER}")
           print(f"От: {EMAIL_FROM}")
+          print(f"Кому: {', '.join(EMAIL_TO)}")
           print(f"Пароль: {'✅ установлен' if EMAIL_PASSWORD else '❌ не установлен'}")
           
           # Создаем письмо
           msg = MIMEMultipart()
           msg['From'] = EMAIL_FROM
-          msg['To'] = EMAIL_TO
+          msg['To'] = ", ".join(EMAIL_TO)
           msg['Subject'] = "Тележки с инструментом"
           
           body = """Здравствуйте!
@@ -67,6 +69,8 @@ jobs:
           Анализ складских остатков завершен.
           
           Файл с результатами прикреплен к этому письму.
+          
+          В результатах добавлена информация о лимитирующих компонентах.
           
           ---
           Автоматическое сообщение от GitHub Actions"""
@@ -89,5 +93,5 @@ jobs:
               server.login(EMAIL_FROM, EMAIL_PASSWORD)
               server.send_message(msg)
           
-          print("✅ Письмо отправлено!")
+          print("✅ Письмо отправлено на ysa@silam.ru и price@silam.ru")
           EOF
