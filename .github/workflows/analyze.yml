@@ -36,7 +36,7 @@ jobs:
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.yandex.ru
-          server_port: 465
+          server_port: 587
           username: ysa@silam.ru
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "Тележки с инструментом"
@@ -54,3 +54,5 @@ jobs:
             ---
             Автоматическое сообщение от GitHub Actions
           attachments: results_*.csv
+          secure: true
+          ignore_cert: false
