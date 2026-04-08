@@ -23,40 +23,35 @@ jobs:
           pip install pandas openpyxl xlrd requests
       
       - name: Запуск анализа
-        run: |
-          echo "🚀 Запуск Python скрипта..."
-          python working_analyze.py
-          echo "📊 Код возврата: $?"
+        run: python working_analyze.py
       
-      - name: Показать все файлы и логи
-        run: |
-          echo ""
-          echo "=========================================="
-          echo "📁 СПИСОК ВСЕХ ФАЙЛОВ В РЕПОЗИТОРИИ"
-          echo "=========================================="
-          ls -la
-          echo ""
-          echo "=========================================="
-          echo "📊 ПОИСК CSV ФАЙЛОВ"
-          echo "=========================================="
-          ls -la *.csv 2>/dev/null || echo "❌ CSV файлы не найдены!"
-          echo ""
-          echo "=========================================="
-          echo "📄 ПОИСК LOG ФАЙЛОВ"
-          echo "=========================================="
-          ls -la *.log 2>/dev/null || echo "❌ LOG файлы не найдены!"
-          echo ""
-          echo "=========================================="
-          echo "📋 СОДЕРЖИМОЕ LOG ФАЙЛОВ (если есть)"
-          echo "=========================================="
-          cat *.log 2>/dev/null || echo "Нет log файлов"
-      
-      - name: Сохранение результатов
+      - name: Сохранение результатов как артефакт
         uses: actions/upload-artifact@v4
         with:
           name: результаты-анализа
-          path: |
-            *.csv
-            *.log
+          path: results_*.csv
           retention-days: 30
-          if-no-files-found: warn
+      
+      - name: Отправка результатов на email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.EMAIL_FROM }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "Тележки с инструментом"
+          to: ${{ secrets.EMAIL_TO }}
+          from: GitHub Actions <${{ secrets.EMAIL_FROM }}>
+          body: |
+            Здравствуйте!
+            
+            Анализ складских остатков завершен.
+            
+            📅 Дата и время: ${{ github.event.head_commit.timestamp }}
+            
+            Файл с результатами прикреплен к этому письму.
+            
+            ---
+            Автоматическое сообщение от GitHub Actions
+          attachments: results_*.csv
+          convert_markdown: true
