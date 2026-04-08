@@ -33,34 +33,28 @@ jobs:
           retention-days: 30
       
       - name: Отправка результатов на email
+        env:
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
         run: |
-          echo "📧 Начинаю отправку письма..."
-          
-          # Проверяем наличие файла
-          ls -la results_*.csv
-          
           python << 'EOF'
           import smtplib
           import glob
+          import os
           from email.mime.multipart import MIMEMultipart
           from email.mime.text import MIMEText
           from email.mime.base import MIMEBase
           from email import encoders
-          import os
           
-          print("1. Настройка параметров...")
-          
-          # Настройки для Яндекс.Почты
+          # Настройки
           SMTP_SERVER = "smtp.yandex.ru"
           SMTP_PORT = 465
           EMAIL_FROM = "ysa@silam.ru"
           EMAIL_TO = "ysa@silam.ru"
           EMAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
           
-          print(f"   SMTP_SERVER: {SMTP_SERVER}")
-          print(f"   EMAIL_FROM: {EMAIL_FROM}")
-          print(f"   EMAIL_TO: {EMAIL_TO}")
-          print(f"   Пароль установлен: {'ДА' if EMAIL_PASSWORD else 'НЕТ'}")
+          print(f"SMTP: {SMTP_SERVER}")
+          print(f"От: {EMAIL_FROM}")
+          print(f"Пароль: {'✅ установлен' if EMAIL_PASSWORD else '❌ не установлен'}")
           
           # Создаем письмо
           msg = MIMEMultipart()
@@ -68,7 +62,6 @@ jobs:
           msg['To'] = EMAIL_TO
           msg['Subject'] = "Тележки с инструментом"
           
-          # Текст письма
           body = """Здравствуйте!
           
           Анализ складских остатков завершен.
@@ -80,41 +73,21 @@ jobs:
           
           msg.attach(MIMEText(body, 'plain'))
           
-          # Прикрепляем CSV файл
+          # Прикрепляем CSV
           csv_files = glob.glob('results_*.csv')
           if csv_files:
-              print(f"2. Найден CSV файл: {csv_files[0]}")
               with open(csv_files[0], 'rb') as f:
                   part = MIMEBase('application', 'octet-stream')
                   part.set_payload(f.read())
                   encoders.encode_base64(part)
                   part.add_header('Content-Disposition', f'attachment; filename="{csv_files[0]}"')
                   msg.attach(part)
-          else:
-              print("2. ОШИБКА: CSV файл не найден!")
-              # Создаем файл с ошибкой
-              with open('error.txt', 'w') as f:
-                  f.write('Файл результатов не найден')
-              with open('error.txt', 'rb') as f:
-                  part = MIMEBase('application', 'octet-stream')
-                  part.set_payload(f.read())
-                  encoders.encode_base64(part)
-                  part.add_header('Content-Disposition', 'attachment; filename="error.txt"')
-                  msg.attach(part)
+              print(f"Файл прикреплен: {csv_files[0]}")
           
           # Отправляем
-          print("3. Подключение к SMTP серверу...")
-          try:
-              server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+          with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
               server.login(EMAIL_FROM, EMAIL_PASSWORD)
-              print("   Аутентификация успешна!")
               server.send_message(msg)
-              server.quit()
-              print("4. ✅ Письмо успешно отправлено!")
-          except Exception as e:
-              print(f"4. ❌ Ошибка: {e}")
-              raise
           
+          print("✅ Письмо отправлено!")
           EOF
-        env:
-          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
