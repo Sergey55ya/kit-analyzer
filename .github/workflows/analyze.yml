@@ -33,26 +33,60 @@ jobs:
           retention-days: 30
       
       - name: Отправка результатов на email
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.yandex.ru
-          server_port: 587
-          username: ysa@silam.ru
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "Тележки с инструментом"
-          to: ysa@silam.ru
-          from: ysa@silam.ru
-          body: |
-            Здравствуйте!
-            
-            Анализ складских остатков завершен.
-            
-            📅 Дата и время: ${{ github.event.head_commit.timestamp }}
-            
-            📊 Результаты анализа во вложении.
-            
-            ---
-            Автоматическое сообщение от GitHub Actions
-          attachments: results_*.csv
-          secure: true
-          ignore_cert: false
+        run: |
+          python - <<EOF
+          import smtplib
+          import glob
+          import ssl
+          from email.mime.multipart import MIMEMultipart
+          from email.mime.text import MIMEText
+          from email.mime.base import MIMEBase
+          from email import encoders
+          
+          # Настройки для Яндекс.Почты
+          SMTP_SERVER = "smtp.yandex.ru"
+          SMTP_PORT = 465
+          EMAIL_FROM = "ysa@silam.ru"
+          EMAIL_TO = "ysa@silam.ru"
+          EMAIL_PASSWORD = "${{ secrets.MAIL_PASSWORD }}"
+          
+          # Создаем письмо
+          msg = MIMEMultipart()
+          msg['From'] = EMAIL_FROM
+          msg['To'] = EMAIL_TO
+          msg['Subject'] = "Тележки с инструментом"
+          
+          # Текст письма
+          body = """Здравствуйте!
+          
+          Анализ складских остатков завершен.
+          
+          Файл с результатами прикреплен к этому письму.
+          
+          ---
+          Автоматическое сообщение от GitHub Actions"""
+          
+          msg.attach(MIMEText(body, 'plain'))
+          
+          # Прикрепляем CSV файл
+          csv_files = glob.glob('results_*.csv')
+          if csv_files:
+              with open(csv_files[0], 'rb') as f:
+                  part = MIMEBase('application', 'octet-stream')
+                  part.set_payload(f.read())
+                  encoders.encode_base64(part)
+                  part.add_header('Content-Disposition', f'attachment; filename="{csv_files[0]}"')
+                  msg.attach(part)
+              print(f"📎 Прикреплен файл: {csv_files[0]}")
+          else:
+              print("⚠️ CSV файл не найден!")
+          
+          # Отправляем через SSL
+          print(f"📧 Подключаюсь к {SMTP_SERVER}:{SMTP_PORT}...")
+          context = ssl.create_default_context()
+          with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, context=context) as server:
+              server.login(EMAIL_FROM, EMAIL_PASSWORD)
+              server.send_message(msg)
+              print("✅ Письмо успешно отправлено!")
+          
+          EOF
