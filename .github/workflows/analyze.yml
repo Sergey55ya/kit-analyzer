@@ -10,17 +10,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      
       - name: Установка библиотек
         run: |
           pip install pandas openpyxl xlrd requests
+      
       - name: Запуск анализа
         run: python working_analyze.py
+      
+      - name: Показать список файлов
+        run: |
+          echo "📁 Список файлов после анализа:"
+          ls -la
+          echo ""
+          echo "📊 CSV файлы:"
+          ls -la results_*.csv 2>/dev/null || echo "   ❌ CSV файлы не найдены!"
+      
       - name: Сохранение результатов
         uses: actions/upload-artifact@v4
         with:
           name: результаты-анализа
-          path: results_*.csv
+          path: |
+            results_*.csv
+            analysis_*.log
           retention-days: 30
+          if-no-files-found: warn
